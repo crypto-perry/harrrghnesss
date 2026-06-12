@@ -41,12 +41,16 @@ export function createBot(opts: {
   // ── owner lock: the first human to message the bot claims it; others get silence ──
   bot.use(async (ctx, next) => {
     const from = ctx.from?.id;
+    console.log(
+      `[update] chat=${ctx.chat?.id} topic=${ctx.message?.message_thread_id ?? "-"} from=${from} (${ctx.from?.first_name ?? "?"}) text=${ctx.message?.text?.slice(0, 60) ?? "<non-text>"}`,
+    );
     if (from === undefined) return;
     const owner = registry.getSetting(OWNER_KEY);
     if (owner === null) {
       registry.setSetting(OWNER_KEY, String(from));
       await ctx.reply(`harness claimed by ${ctx.from?.first_name} (${from}).`);
     } else if (owner !== String(from)) {
+      console.log(`[update] ignored: from=${from} is not owner=${owner}`);
       return;
     }
     await next();
@@ -67,14 +71,18 @@ export function createBot(opts: {
 
     // ── unbound surface → orchestrator ─────────────────────────────────────────
     if (!session) {
+      console.log(`[route] → orchestrator: "${text.slice(0, 80)}"`);
       try {
         const answer = await orchestrator.handle(text, { chatId, topicId, userName: ctx.from?.first_name });
+        console.log(`[route] orchestrator replied (${answer.length} chars)`);
         await reply(ctx, answer);
       } catch (e) {
+        console.error(`[route] orchestrator failed:`, e);
         await reply(ctx, `orchestrator error: ${String(e).slice(0, 600)}`);
       }
       return;
     }
+    console.log(`[route] → session ${session.id}: "${text.slice(0, 80)}"`);
 
     // ── bound surface → a turn for the session's coding agent ──────────────────
     if (session.status === "running") {

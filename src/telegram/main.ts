@@ -1,19 +1,12 @@
 #!/usr/bin/env node
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { openDb } from "../substrate/db.js";
 import { Registry } from "../core/registry.js";
 import { CodexWorker } from "../agent/codex.js";
 import { Orchestrator } from "../agent/orchestrator.js";
+import { DB_PATH, WORKSPACE_ROOT, loadEnv } from "../core/paths.js";
 import { createBot } from "./bot.js";
 
-const HARNESS_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-
-try {
-  process.loadEnvFile(join(HARNESS_ROOT, ".env"));
-} catch {
-  /* .env optional — env vars may come from the shell */
-}
+loadEnv();
 
 const token = process.env["TELEGRAM_BOT_TOKEN"];
 if (!token) {
@@ -21,10 +14,11 @@ if (!token) {
   process.exit(1);
 }
 
-const db = openDb(process.env["HARNESS_DB"] ?? join(HARNESS_ROOT, ".harness", "substrate.db"));
+const db = openDb(DB_PATH);
 const registry = new Registry(db);
 const worker = new CodexWorker(db, registry);
-const orchestrator = new Orchestrator(registry, HARNESS_ROOT);
+// the orchestrator works at WORKSPACE level: it sees harness/, projects/, AGENTS.md (symlink)
+const orchestrator = new Orchestrator(registry, WORKSPACE_ROOT);
 
 const bot = createBot({ token, registry, worker, orchestrator });
 

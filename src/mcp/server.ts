@@ -2,12 +2,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { openDb } from "../substrate/db.js";
 import { sync, defaultRoots } from "../substrate/sync.js";
 import { search, peek, read, recent, fileHistory, delta } from "../substrate/search.js";
 import { findCollisions } from "../substrate/collisions.js";
+import { DB_PATH, PROJECTS_ROOT } from "../core/paths.js";
 
 /**
  * MCP server over the harness substrate. Staged retrieval: search → peek → read.
@@ -16,10 +15,6 @@ import { findCollisions } from "../substrate/collisions.js";
  * Tool descriptions carry explicit trigger conditions — models under-reach for tools
  * unless told *when* to call them, not just what they do.
  */
-
-const HARNESS_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const DB_PATH = process.env["HARNESS_DB"] ?? join(HARNESS_ROOT, ".harness", "substrate.db");
-const PROJECTS_ROOT = process.env["HARNESS_PROJECTS"] ?? join(HARNESS_ROOT, "projects");
 
 const db = openDb(DB_PATH);
 const fresh = () => sync(db, defaultRoots());

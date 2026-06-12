@@ -23,7 +23,8 @@ export class Orchestrator {
       workingDirectory: this.harnessRoot,
       sandboxMode: "workspace-write" as const,
       networkAccessEnabled: true, // clones need the network
-      modelReasoningEffort: "low" as const,
+      // user's call: correctness of intent-parsing over chat latency ("xhigh" if it misroutes)
+      modelReasoningEffort: "high" as const,
     };
     const existing = this.registry.getSetting(THREAD_KEY);
     const thread = existing ? this.codex.resumeThread(existing, threadOptions) : this.codex.startThread(threadOptions);

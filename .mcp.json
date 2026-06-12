@@ -3,7 +3,7 @@
     "harness-substrate": {
       "command": "npx",
       "args": ["tsx", "src/mcp/server.ts"],
-      "cwd": "/Users/hepl/harrrghnesss"
+      "cwd": "/Users/hepl/harrrghnesss/harness"
     }
   }
 }

@@ -1,23 +1,14 @@
 #!/usr/bin/env node
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Api } from "grammy";
 import { openDb } from "./substrate/db.js";
 import { sync, defaultRoots } from "./substrate/sync.js";
 import { search, peek, read, recent, fileHistory, delta } from "./substrate/search.js";
 import { findCollisions } from "./substrate/collisions.js";
 import { Registry } from "./core/registry.js";
+import { DB_PATH, PROJECTS_ROOT, loadEnv } from "./core/paths.js";
 import { cloneProject, createSessionWorktree } from "./git/repos.js";
 
-const HARNESS_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const DB_PATH = process.env["HARNESS_DB"] ?? join(HARNESS_ROOT, ".harness", "substrate.db");
-const PROJECTS_ROOT = process.env["HARNESS_PROJECTS"] ?? join(HARNESS_ROOT, "projects");
-
-try {
-  process.loadEnvFile(join(HARNESS_ROOT, ".env"));
-} catch {
-  /* optional */
-}
+loadEnv();
 
 const fmtTs = (ts: number) => new Date(ts).toISOString().replace("T", " ").slice(0, 19);
 
