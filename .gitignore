@@ -1,0 +1,11 @@
+# managed repos live under projects/ — each is its own git repo, never tracked here
+projects/
+
+# derived caches — raw session files remain the source of truth
+.harness/
+
+node_modules/
+dist/
+*.log
+.env
+.DS_Store
