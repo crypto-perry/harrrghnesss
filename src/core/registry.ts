@@ -160,6 +160,11 @@ export class Registry {
       .run(status, Date.now(), sessionId);
   }
 
+  /** Recover from a process death mid-turn: a fresh process has no turns in flight. */
+  clearStaleRunning(): void {
+    this.db.prepare("UPDATE agent_sessions SET status = 'idle' WHERE status = 'running'").run();
+  }
+
   // ── telegram bindings ───────────────────────────────────────────────────────
 
   bind(chatId: string, topicId: string | undefined, sessionId: string): void {

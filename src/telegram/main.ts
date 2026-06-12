@@ -16,6 +16,10 @@ if (!token) {
 
 const db = openDb(DB_PATH);
 const registry = new Registry(db);
+
+// a fresh process has no turns in flight — any 'running' status is a stale leftover
+// from a previous process dying mid-turn, and would bounce every new message
+registry.clearStaleRunning();
 const worker = new CodexWorker(db, registry);
 // the orchestrator works at WORKSPACE level: it sees harness/, projects/, AGENTS.md (symlink)
 const orchestrator = new Orchestrator(registry, WORKSPACE_ROOT);
