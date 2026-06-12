@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { openDb } from "../substrate/db.js";
 import { Registry } from "../core/registry.js";
 import { CodexWorker } from "../agent/codex.js";
+import { Orchestrator } from "../agent/orchestrator.js";
 import { createBot } from "./bot.js";
 
 const HARNESS_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -23,9 +24,9 @@ if (!token) {
 const db = openDb(process.env["HARNESS_DB"] ?? join(HARNESS_ROOT, ".harness", "substrate.db"));
 const registry = new Registry(db);
 const worker = new CodexWorker(db, registry);
-const projectsRoot = process.env["HARNESS_PROJECTS"] ?? join(HARNESS_ROOT, "projects");
+const orchestrator = new Orchestrator(registry, HARNESS_ROOT);
 
-const bot = createBot({ token, registry, worker, projectsRoot });
+const bot = createBot({ token, registry, worker, orchestrator });
 
 bot.catch((err) => console.error("bot error:", err.error));
 

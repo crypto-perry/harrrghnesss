@@ -1,14 +1,23 @@
 #!/usr/bin/env node
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Api } from "grammy";
 import { openDb } from "./substrate/db.js";
 import { sync, defaultRoots } from "./substrate/sync.js";
 import { search, peek, read, recent, fileHistory, delta } from "./substrate/search.js";
 import { findCollisions } from "./substrate/collisions.js";
+import { Registry } from "./core/registry.js";
+import { cloneProject, createSessionWorktree } from "./git/repos.js";
 
 const HARNESS_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB_PATH = process.env["HARNESS_DB"] ?? join(HARNESS_ROOT, ".harness", "substrate.db");
 const PROJECTS_ROOT = process.env["HARNESS_PROJECTS"] ?? join(HARNESS_ROOT, "projects");
+
+try {
+  process.loadEnvFile(join(HARNESS_ROOT, ".env"));
+} catch {
+  /* optional */
+}
 
 const fmtTs = (ts: number) => new Date(ts).toISOString().replace("T", " ").slice(0, 19);
 
@@ -16,7 +25,7 @@ function out(obj: unknown): void {
   console.log(JSON.stringify(obj, null, 2));
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const [cmd, ...rest] = process.argv.slice(2);
   const db = openDb(DB_PATH);
 
@@ -81,6 +90,81 @@ function main(): void {
       for (const c of cols) console.log(`⚠ ${c.file} dirty in ${c.sites.length} checkouts of ${c.repo}\n   ${c.sites.join("\n   ")}`);
       return;
     }
+    // ── control-plane ops (used by the orchestrator agent — keep output JSON) ──
+    case "clone": {
+      const [url, name] = rest;
+      if (!url) return fail("usage: harness clone <git-url> [name]");
+      const registry = new Registry(db);
+      const p = cloneProject(url, PROJECTS_ROOT, name);
+      registry.addProject({ name: p.name, repoUrl: url, path: p.path, defaultBranch: p.defaultBranch });
+      out({ ok: true, project: p.name, defaultBranch: p.defaultBranch, path: p.path });
+      return;
+    }
+    case "session-new": {
+      const registry = new Registry(db);
+      const args = [...rest];
+      const flag = (name: string): string | undefined => {
+        const i = args.indexOf(`--${name}`);
+        if (i === -1) return undefined;
+        const v = args[i + 1];
+        args.splice(i, 2);
+        return v;
+      };
+      const chatId = flag("chat");
+      const topicFlag = flag("topic");
+      const title = flag("title") ?? "untitled task";
+      const projectName = args[0];
+      if (!projectName) return fail("usage: harness session-new <project> --chat <chatId> --title <t> [--topic <id>]");
+      const project = registry.getProject(projectName);
+      if (!project) return fail(`unknown project '${projectName}' — run: harness clone <url> first`);
+
+      const session = registry.createSession({
+        project: project.name,
+        title,
+        worktreePath: "pending",
+        branch: "pending",
+        vendor: "codex",
+      });
+      const wt = createSessionWorktree(project.path, PROJECTS_ROOT, project.name, session.id, project.defaultBranch);
+      registry.setWorktree(session.id, wt.worktreePath, wt.branch);
+
+      let topicId = topicFlag;
+      const token = process.env["TELEGRAM_BOT_TOKEN"];
+      if (chatId && token) {
+        const api = new Api(token);
+        if (!topicId) {
+          // dedicated topic per session: the user talks to the coding agent there
+          const topic = await api
+            .createForumTopic(Number(chatId), `${project.name}: ${title}`.slice(0, 100))
+            .catch(() => null);
+          if (topic) topicId = String(topic.message_thread_id);
+        }
+        if (topicId) {
+          registry.bind(chatId, topicId, session.id);
+          await api
+            .sendMessage(Number(chatId), `session ${session.id} ready — "${title}"\nbranch ${wt.branch}\ntalk to the agent here.`, {
+              message_thread_id: Number(topicId),
+            })
+            .catch(() => {});
+        }
+      }
+      out({ ok: true, sessionId: session.id, branch: wt.branch, worktree: wt.worktreePath, topicId: topicId ?? null });
+      return;
+    }
+    case "sessions": {
+      const registry = new Registry(db);
+      out(registry.listSessions());
+      return;
+    }
+    case "bind": {
+      const [chatId, topicId, sessionId] = rest;
+      if (!chatId || !topicId || !sessionId) return fail("usage: harness bind <chatId> <topicId> <sessionId>");
+      const registry = new Registry(db);
+      if (!registry.getSession(sessionId)) return fail(`unknown session ${sessionId}`);
+      registry.bind(chatId, topicId, sessionId);
+      out({ ok: true });
+      return;
+    }
     case "stats": {
       const n = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
       out({
@@ -113,4 +197,4 @@ function fail(msg: string): void {
   process.exitCode = 1;
 }
 
-main();
+await main();
