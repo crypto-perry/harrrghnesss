@@ -67,9 +67,12 @@ export function createBot(opts: {
       .filter((p, i, a) => a.indexOf(p) === i && existsSync(p))
       .slice(0, 3);
     for (const p of imagePaths) {
-      await ctx
-        .replyWithPhoto(new InputFile(p), { message_thread_id: ctx.message?.message_thread_id })
-        .catch(() => {});
+      try {
+        await ctx.replyWithPhoto(new InputFile(p), { message_thread_id: ctx.message?.message_thread_id });
+        console.log(`[media] sent photo ${p}`);
+      } catch (e) {
+        console.error(`[media] sendPhoto failed for ${p}:`, e);
+      }
     }
   };
 
