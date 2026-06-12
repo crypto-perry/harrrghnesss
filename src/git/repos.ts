@@ -49,6 +49,26 @@ export function createSessionClone(
   return { worktreePath: clonePath, branch };
 }
 
+/**
+ * Clone a repo INTO a session's workspace folder: workspaces/<id>/<repoName>,
+ * on a fresh session branch. Source is a local path (project cache or a parent
+ * session's clone) so no network/credentials are needed.
+ */
+export function cloneRepoInto(
+  sourcePath: string,
+  repoUrl: string | null,
+  workspaceDir: string,
+  repoName: string,
+  branch: string,
+  baseRef: string,
+): { repoPath: string; branch: string } {
+  const repoPath = join(workspaceDir, repoName);
+  git(["clone", "--branch", baseRef, sourcePath, repoPath]);
+  if (repoUrl) git(["remote", "set-url", "origin", repoUrl], repoPath);
+  git(["checkout", "-b", branch], repoPath);
+  return { repoPath, branch };
+}
+
 export function worktreeStatus(worktreePath: string): { branch: string; dirty: string[]; ahead: number } {
   const branch = git(["rev-parse", "--abbrev-ref", "HEAD"], worktreePath).trim();
   const dirty = git(["status", "--porcelain"], worktreePath).split("\n").filter(Boolean);

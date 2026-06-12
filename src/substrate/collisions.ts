@@ -63,19 +63,32 @@ function checkouts(dir: string): string[] {
   }
 }
 
-export function findCollisions(projectsRoot: string): Collision[] {
-  if (!existsSync(projectsRoot)) return [];
+function gitDirsUnder(root: string, depth: 1 | 2): string[] {
+  if (!existsSync(root)) return [];
+  const dirs: string[] = [];
+  for (const name of readdirSync(root)) {
+    const p = join(root, name);
+    try {
+      if (!statSync(p).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    if (isGitRepo(p)) dirs.push(p);
+    else if (depth === 2) dirs.push(...gitDirsUnder(p, 1));
+  }
+  return dirs;
+}
 
-  // gather candidate repos: direct children of projects/
-  const repoDirs = readdirSync(projectsRoot)
-    .map((name) => join(projectsRoot, name))
-    .filter((p) => {
-      try {
-        return statSync(p).isDirectory() && isGitRepo(p);
-      } catch {
-        return false;
-      }
-    });
+/**
+ * Scan every checkout the harness knows about: project caches (projects/<name>)
+ * and session repos (workspaces/<id>/<name>).
+ */
+export function findCollisions(projectsRoot: string, workspacesRoot?: string): Collision[] {
+  const repoDirs = [
+    ...gitDirsUnder(projectsRoot, 1),
+    ...(workspacesRoot ? gitDirsUnder(workspacesRoot, 2) : []),
+  ];
+  if (repoDirs.length === 0) return [];
 
   // group every checkout (clone or worktree) by repo identity
   const byIdentity = new Map<string, Set<string>>();

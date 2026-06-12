@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { Bot, InputFile, type Context } from "grammy";
 import type { Registry } from "../core/registry.js";
-import type { CodexWorker } from "../agent/codex.js";
+import type { AgentWorker } from "../agent/worker.js";
 import type { Orchestrator } from "../agent/orchestrator.js";
 
 /**
@@ -33,10 +33,10 @@ function surface(ctx: Context): { chatId: string; topicId: string | undefined } 
 export function createBot(opts: {
   token: string;
   registry: Registry;
-  worker: CodexWorker;
+  workers: Record<string, AgentWorker>;
   orchestrator: Orchestrator;
 }): Bot {
-  const { token, registry, worker, orchestrator } = opts;
+  const { token, registry, workers, orchestrator } = opts;
   const bot = new Bot(token);
 
   // ── owner lock: the first human to message the bot claims it; others get silence ──
@@ -112,11 +112,16 @@ export function createBot(opts: {
       }
       return;
     }
-    console.log(`[route] → session ${session.id}: "${text.slice(0, 80)}"`);
+    console.log(`[route] → session ${session.id} (${session.vendor}): "${text.slice(0, 80)}"`);
 
     // ── bound surface → a turn for the session's coding agent ──────────────────
     if (session.status === "running") {
       return reply(ctx, `session ${session.id} is mid-turn — wait for it to finish`);
+    }
+    const worker = workers[session.vendor];
+    if (!worker) {
+      doneTyping();
+      return reply(ctx, `no worker available for vendor '${session.vendor}'`);
     }
 
     // progress lines are batched to avoid telegram rate limits on busy turns

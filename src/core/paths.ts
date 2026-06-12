@@ -19,6 +19,9 @@ export const DB_PATH = process.env["HARNESS_DB"] ?? join(WORKSPACE_ROOT, ".harne
 
 export const PROJECTS_ROOT = process.env["HARNESS_PROJECTS"] ?? join(WORKSPACE_ROOT, "projects");
 
+/** Session homes: one folder per session, repo clones optional inside. */
+export const WORKSPACES_ROOT = process.env["HARNESS_WORKSPACES"] ?? join(WORKSPACE_ROOT, "workspaces");
+
 export function loadEnv(): void {
   try {
     process.loadEnvFile(join(HARNESS_ROOT, ".env"));

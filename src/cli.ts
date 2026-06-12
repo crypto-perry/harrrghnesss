@@ -5,8 +5,10 @@ import { sync, defaultRoots } from "./substrate/sync.js";
 import { search, peek, read, recent, fileHistory, delta } from "./substrate/search.js";
 import { findCollisions } from "./substrate/collisions.js";
 import { Registry } from "./core/registry.js";
-import { DB_PATH, PROJECTS_ROOT, loadEnv } from "./core/paths.js";
-import { cloneProject, createSessionClone } from "./git/repos.js";
+import { DB_PATH, PROJECTS_ROOT, WORKSPACES_ROOT, loadEnv } from "./core/paths.js";
+import { cloneProject, cloneRepoInto } from "./git/repos.js";
+import { mkdirSync, existsSync } from "node:fs";
+import { basename, join } from "node:path";
 
 loadEnv();
 
@@ -76,7 +78,7 @@ async function main(): Promise<void> {
       return;
     }
     case "collisions": {
-      const cols = findCollisions(PROJECTS_ROOT);
+      const cols = findCollisions(PROJECTS_ROOT, WORKSPACES_ROOT);
       if (cols.length === 0) console.log("no collisions");
       for (const c of cols) console.log(`⚠ ${c.file} dirty in ${c.sites.length} checkouts of ${c.repo}\n   ${c.sites.join("\n   ")}`);
       return;
@@ -104,49 +106,64 @@ async function main(): Promise<void> {
       const chatId = flag("chat");
       const topicFlag = flag("topic");
       const title = flag("title") ?? "untitled task";
-      const projectName = args[0];
-      if (!projectName) return fail("usage: harness session-new <project> --chat <chatId> --title <t> [--topic <id>]");
-      const project = registry.getProject(projectName);
-      if (!project) return fail(`unknown project '${projectName}' — run: harness clone <url> first`);
+      const vendor = flag("vendor") ?? "codex";
+      const forkOf = flag("fork");
+      const projectName = flag("project") ?? args[0]; // positional kept for back-compat
+      if (!["codex", "claude"].includes(vendor)) return fail(`unknown vendor '${vendor}' (codex|claude)`);
 
+      const parent = forkOf ? registry.getSession(forkOf) : null;
+      if (forkOf && !parent) return fail(`unknown parent session '${forkOf}'`);
+      const project = projectName ? registry.getProject(projectName) : parent?.project ? registry.getProject(parent.project) : null;
+      if (projectName && !project) return fail(`unknown project '${projectName}' — run: harness clone <url> first`);
+
+      // session first (its id names the workspace and branch), home folder second
       const session = registry.createSession({
-        project: project.name,
-        title,
+        project: project?.name ?? "",
+        title: parent ? `${title} (fork of ${parent.id})` : title,
         worktreePath: "pending",
-        branch: "pending",
-        vendor: "codex",
+        branch: "",
+        vendor,
+        parentId: parent?.id ?? null,
       });
-      const wt = createSessionClone(
-        project.path,
-        PROJECTS_ROOT,
-        project.name,
-        session.id,
-        project.defaultBranch,
-        project.repoUrl,
-      );
-      registry.setWorktree(session.id, wt.worktreePath, wt.branch);
+      const workspaceDir = join(WORKSPACES_ROOT, session.id);
+      mkdirSync(workspaceDir, { recursive: true });
+
+      let branch = "";
+      if (parent && parent.branch) {
+        // fork: clone the parent's repo at the parent's branch state (committed work carries over)
+        const parentRepo = existsSync(join(parent.worktreePath, ".git"))
+          ? parent.worktreePath
+          : join(parent.worktreePath, project?.name ?? "");
+        branch = `harness/${session.id}`;
+        cloneRepoInto(parentRepo, project?.repoUrl ?? null, workspaceDir, basename(parentRepo), branch, parent.branch);
+      } else if (project) {
+        branch = `harness/${session.id}`;
+        cloneRepoInto(project.path, project.repoUrl, workspaceDir, project.name, branch, project.defaultBranch);
+      }
+      // no project, no parent → the workspace starts empty: sessions just exist
+      registry.setWorktree(session.id, workspaceDir, branch);
 
       let topicId = topicFlag;
       const token = process.env["TELEGRAM_BOT_TOKEN"];
       if (chatId && token) {
         const api = new Api(token);
         if (!topicId) {
-          // dedicated topic per session: the user talks to the coding agent there
-          const topic = await api
-            .createForumTopic(Number(chatId), `${project.name}: ${title}`.slice(0, 100))
-            .catch(() => null);
+          const label = project ? `${project.name}: ${title}` : title;
+          const topic = await api.createForumTopic(Number(chatId), label.slice(0, 100)).catch(() => null);
           if (topic) topicId = String(topic.message_thread_id);
         }
         if (topicId) {
           registry.bind(chatId, topicId, session.id);
           await api
-            .sendMessage(Number(chatId), `session ${session.id} ready — "${title}"\nbranch ${wt.branch}\ntalk to the agent here.`, {
-              message_thread_id: Number(topicId),
-            })
+            .sendMessage(
+              Number(chatId),
+              `session ${session.id} (${vendor}) ready — "${title}"${branch ? `\nbranch ${branch}` : ""}\ntalk to the agent here.`,
+              { message_thread_id: Number(topicId) },
+            )
             .catch(() => {});
         }
       }
-      out({ ok: true, sessionId: session.id, branch: wt.branch, worktree: wt.worktreePath, topicId: topicId ?? null });
+      out({ ok: true, sessionId: session.id, vendor, workspace: workspaceDir, branch: branch || null, topicId: topicId ?? null, parent: parent?.id ?? null });
       return;
     }
     case "sessions": {

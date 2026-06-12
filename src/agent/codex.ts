@@ -1,25 +1,16 @@
 import { Codex, type ThreadEvent, type ThreadItem } from "@openai/codex-sdk";
 import type { SubstrateDb } from "../substrate/db.js";
 import type { Registry, AgentSession } from "../core/registry.js";
+import type { AgentWorker, TurnOutcome, TurnProgress } from "./worker.js";
 import { sync, defaultRoots } from "../substrate/sync.js";
 import { delta } from "../substrate/search.js";
+import { snapshotHeads, recordTurnCommits } from "./commits.js";
 
 /**
  * Codex SDK worker. One Codex thread per harness session, resumed across turns.
  * Codex persists its own transcript to ~/.codex/sessions — the substrate tailers
  * pick those up automatically, so this worker needs zero self-reporting.
  */
-
-export interface TurnProgress {
-  onItem?: (line: string) => void;
-}
-
-export interface TurnOutcome {
-  finalResponse: string;
-  threadId: string | null;
-  filesTouched: string[];
-  usage: { input: number; cachedInput: number; output: number } | null;
-}
 
 const describeItem = (item: ThreadItem): string | null => {
   switch (item.type) {
@@ -36,7 +27,8 @@ const describeItem = (item: ThreadItem): string | null => {
   }
 };
 
-export class CodexWorker {
+export class CodexWorker implements AgentWorker {
+  readonly vendor = "codex";
   private codex = new Codex();
 
   constructor(
@@ -51,9 +43,13 @@ export class CodexWorker {
       `You are a task-session agent in a multi-agent harness. Task: "${session.title}" (project ${session.project}).`,
       `The user drives you over TELEGRAM from a phone: keep responses short and skimmable —`,
       `outcome first, no headers, no code dumps unless asked. Ask at most one question at a time.`,
-      `You work in your own dedicated clone of the repo, on branch ${session.branch}. Other agents`,
-      `work in parallel in their own clones. Commit your work in reasonable increments on this branch;`,
-      `never switch branches, never push unless the user asks, never touch paths outside this clone.`,
+      session.branch
+        ? `Your folder contains a dedicated clone of the project repo, on branch ${session.branch}. Commit in`
+        : `Your folder starts empty — create whatever the task needs inside it. If you need a repo, say so.`,
+      session.branch
+        ? `reasonable increments on that branch; never switch branches, never push unless the user asks.`
+        : `Keep all work inside your folder.`,
+      `Other agents work in parallel in their own folders — never touch paths outside yours.`,
       `Turn inputs may begin with <workspace-activity>: recent activity by other agents/humans,`,
       `including parallel work on files you may be about to touch — read it before editing.`,
       `</session-brief>`,
@@ -94,6 +90,7 @@ export class CodexWorker {
     const threadOptions = {
       workingDirectory: session.worktreePath,
       sandboxMode: "workspace-write" as const,
+      skipGitRepoCheck: true, // session homes may be plain folders, not git repos
       modelReasoningEffort: "medium" as const,
     };
     const thread = session.vendorThreadId
@@ -102,6 +99,7 @@ export class CodexWorker {
 
     const input = this.composeInput(session, userMessage);
     this.registry.setStatus(sessionId, "running");
+    const headsBefore = snapshotHeads(session.worktreePath);
 
     const filesTouched = new Set<string>();
     let finalResponse = "";
@@ -139,6 +137,8 @@ export class CodexWorker {
     } finally {
       this.registry.setStatus(sessionId, "idle");
     }
+    sync(this.db, defaultRoots()); // ingest the turn's transcript before mapping commits to capsules
+    recordTurnCommits(this.db, thread.id ?? session.vendorThreadId, session.worktreePath, headsBefore);
 
     return {
       finalResponse: finalResponse || "(turn produced no agent message)",

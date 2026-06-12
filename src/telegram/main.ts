@@ -2,6 +2,7 @@
 import { openDb } from "../substrate/db.js";
 import { Registry } from "../core/registry.js";
 import { CodexWorker } from "../agent/codex.js";
+import { ClaudeWorker } from "../agent/claude.js";
 import { Orchestrator } from "../agent/orchestrator.js";
 import { DB_PATH, WORKSPACE_ROOT, loadEnv } from "../core/paths.js";
 import { createBot } from "./bot.js";
@@ -20,11 +21,14 @@ const registry = new Registry(db);
 // a fresh process has no turns in flight — any 'running' status is a stale leftover
 // from a previous process dying mid-turn, and would bounce every new message
 registry.clearStaleRunning();
-const worker = new CodexWorker(db, registry);
+const workers = {
+  codex: new CodexWorker(db, registry),
+  claude: new ClaudeWorker(db, registry), // needs ANTHROPIC_API_KEY in .env
+};
 // the orchestrator works at WORKSPACE level: it sees harness/, projects/, AGENTS.md (symlink)
 const orchestrator = new Orchestrator(registry, WORKSPACE_ROOT);
 
-const bot = createBot({ token, registry, worker, orchestrator });
+const bot = createBot({ token, registry, workers, orchestrator });
 
 bot.catch((err) => console.error("bot error:", err.error));
 

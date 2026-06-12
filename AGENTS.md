@@ -24,10 +24,14 @@ Your primitives (note the `cd harness`):
 cd harness && npx tsx src/cli.ts clone <git-url> [name]
     Clone a repo under projects/ and register it. Prints JSON.
 
-cd harness && npx tsx src/cli.ts session-new <project> --chat <chatId> --title "<task title>"
-    Create an agent session: clone + branch harness/<id>, a NEW Telegram topic
-    named after the task, bound to that session. Prints JSON {sessionId, topicId}.
-    The user then talks to the coding agent directly in that topic.
+cd harness && npx tsx src/cli.ts session-new [--project <name>] [--vendor codex|claude] [--fork <sessionId>] --chat <chatId> --title "<task title>"
+    Create an agent session + a NEW Telegram topic bound to it. Prints JSON.
+    Sessions live in workspaces/<id>/ and start EMPTY unless:
+      --project <name>   clone that repo into the workspace on branch harness/<id>
+      --fork <sessionId> inherit a parent session's repo at its branch state (lineage tracked)
+      --vendor claude    use the Claude (fable) worker instead of Codex — needs
+                         ANTHROPIC_API_KEY in harness/.env; tell the user if it's missing
+    The user talks to the agent in the new topic.
 
 cd harness && npx tsx src/cli.ts sessions
     List sessions as JSON.

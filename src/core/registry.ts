@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS projects (
 
 CREATE TABLE IF NOT EXISTS agent_sessions (
   id               TEXT PRIMARY KEY,
-  project          TEXT NOT NULL REFERENCES projects(name),
+  project          TEXT NOT NULL DEFAULT '',
   title            TEXT NOT NULL,
   worktree_path    TEXT NOT NULL,
   branch           TEXT NOT NULL,
@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `;
 
+/** Additive migrations for columns introduced after first release. */
+const MIGRATIONS = ["ALTER TABLE agent_sessions ADD COLUMN parent_id TEXT"];
+
 export interface Project {
   name: string;
   repoUrl: string | null;
@@ -51,12 +54,16 @@ export interface Project {
 
 export interface AgentSession {
   id: string;
+  /** registered project name, or "" for repo-less sessions */
   project: string;
   title: string;
+  /** the session's home folder (may contain repo clones, or nothing) */
   worktreePath: string;
+  /** working branch in the session's repo clone, or "" for repo-less sessions */
   branch: string;
   vendor: string;
   vendorThreadId: string | null;
+  parentId: string | null;
   status: "idle" | "running" | "archived";
   createdAt: number;
   lastActiveAt: number | null;
@@ -70,6 +77,7 @@ interface SessionRow {
   branch: string;
   vendor: string;
   vendor_thread_id: string | null;
+  parent_id: string | null;
   status: AgentSession["status"];
   created_at: number;
   last_active_at: number | null;
@@ -83,6 +91,7 @@ const toSession = (r: SessionRow): AgentSession => ({
   branch: r.branch,
   vendor: r.vendor,
   vendorThreadId: r.vendor_thread_id,
+  parentId: r.parent_id ?? null,
   status: r.status,
   createdAt: r.created_at,
   lastActiveAt: r.last_active_at,
@@ -91,6 +100,48 @@ const toSession = (r: SessionRow): AgentSession => ({
 export class Registry {
   constructor(private db: SubstrateDb) {
     db.exec(SCHEMA);
+    for (const m of MIGRATIONS) {
+      try {
+        db.exec(m);
+      } catch {
+        /* column already exists */
+      }
+    }
+    this.dropProjectFkIfPresent();
+  }
+
+  /**
+   * Repo-less sessions store project = "". Databases created before that change
+   * carry a REFERENCES projects(name) constraint SQLite can't drop in place —
+   * rebuild the table once.
+   */
+  private dropProjectFkIfPresent(): void {
+    const fks = this.db.pragma("foreign_key_list(agent_sessions)") as { table: string }[];
+    if (!fks.some((f) => f.table === "projects")) return;
+    // telegram_bindings references this table — FK enforcement must be off for the rebuild
+    this.db.pragma("foreign_keys = OFF");
+    this.db.exec(`
+      BEGIN;
+      CREATE TABLE agent_sessions_new (
+        id               TEXT PRIMARY KEY,
+        project          TEXT NOT NULL DEFAULT '',
+        title            TEXT NOT NULL,
+        worktree_path    TEXT NOT NULL,
+        branch           TEXT NOT NULL,
+        vendor           TEXT NOT NULL DEFAULT 'codex',
+        vendor_thread_id TEXT,
+        status           TEXT NOT NULL DEFAULT 'idle',
+        created_at       INTEGER NOT NULL,
+        last_active_at   INTEGER,
+        parent_id        TEXT
+      );
+      INSERT INTO agent_sessions_new (id, project, title, worktree_path, branch, vendor, vendor_thread_id, status, created_at, last_active_at, parent_id)
+        SELECT id, project, title, worktree_path, branch, vendor, vendor_thread_id, status, created_at, last_active_at, parent_id FROM agent_sessions;
+      DROP TABLE agent_sessions;
+      ALTER TABLE agent_sessions_new RENAME TO agent_sessions;
+      COMMIT;
+    `);
+    this.db.pragma("foreign_keys = ON");
   }
 
   // ── projects ────────────────────────────────────────────────────────────────
@@ -119,14 +170,18 @@ export class Registry {
 
   // ── agent sessions ──────────────────────────────────────────────────────────
 
-  createSession(s: Omit<AgentSession, "id" | "createdAt" | "lastActiveAt" | "status" | "vendorThreadId">): AgentSession {
+  createSession(
+    s: Omit<AgentSession, "id" | "createdAt" | "lastActiveAt" | "status" | "vendorThreadId" | "parentId"> & {
+      parentId?: string | null;
+    },
+  ): AgentSession {
     const id = randomBytes(4).toString("hex");
     this.db
       .prepare(
-        `INSERT INTO agent_sessions (id, project, title, worktree_path, branch, vendor, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO agent_sessions (id, project, title, worktree_path, branch, vendor, parent_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, s.project, s.title, s.worktreePath, s.branch, s.vendor, Date.now());
+      .run(id, s.project, s.title, s.worktreePath, s.branch, s.vendor, s.parentId ?? null, Date.now());
     return this.getSession(id)!;
   }
 

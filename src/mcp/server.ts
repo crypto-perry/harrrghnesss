@@ -6,7 +6,7 @@ import { openDb } from "../substrate/db.js";
 import { sync, defaultRoots } from "../substrate/sync.js";
 import { search, peek, read, recent, fileHistory, delta } from "../substrate/search.js";
 import { findCollisions } from "../substrate/collisions.js";
-import { DB_PATH, PROJECTS_ROOT } from "../core/paths.js";
+import { DB_PATH, PROJECTS_ROOT, WORKSPACES_ROOT } from "../core/paths.js";
 
 /**
  * MCP server over the harness substrate. Staged retrieval: search → peek → read.
@@ -106,7 +106,7 @@ server.registerTool(
       "collision course. Call before starting edits in any repo under projects/ and before committing.",
     inputSchema: {},
   },
-  async () => json(findCollisions(PROJECTS_ROOT)),
+  async () => json(findCollisions(PROJECTS_ROOT, WORKSPACES_ROOT)),
 );
 
 server.registerTool(
