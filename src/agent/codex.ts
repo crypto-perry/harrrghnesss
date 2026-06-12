@@ -44,10 +44,26 @@ export class CodexWorker {
     private registry: Registry,
   ) {}
 
+  /** Injected once, on a session's first turn — the thread carries it (cached) afterwards. */
+  private sessionBrief(session: AgentSession): string {
+    return [
+      `<session-brief>`,
+      `You are a task-session agent in a multi-agent harness. Task: "${session.title}" (project ${session.project}).`,
+      `The user drives you over TELEGRAM from a phone: keep responses short and skimmable —`,
+      `outcome first, no headers, no code dumps unless asked. Ask at most one question at a time.`,
+      `You work in a dedicated git worktree on branch ${session.branch}. Other agents work in`,
+      `parallel elsewhere. Commit your work in reasonable increments on this branch; never switch`,
+      `branches, never push unless the user asks, never touch paths outside this worktree.`,
+      `Turn inputs may begin with <workspace-activity>: recent activity by other agents/humans,`,
+      `including parallel work on files you may be about to touch — read it before editing.`,
+      `</session-brief>`,
+    ].join("\n");
+  }
+
   /**
-   * Compose the turn input: a compact cross-agent delta preamble (what happened
-   * elsewhere since this session's last turn) + the user request. Volatile content
-   * last; never repeats thanks to the watermark.
+   * Compose the turn input: first-turn role brief (stable prefix), then the
+   * cross-agent delta (what happened elsewhere since this session's last turn),
+   * then the user request. Volatile content last; never repeats (watermarked).
    */
   private composeInput(session: AgentSession, userMessage: string): string {
     sync(this.db, defaultRoots());
@@ -56,7 +72,8 @@ export class CodexWorker {
       .filter((c) => c.sessionId !== session.vendorThreadId)
       .slice(-12);
 
-    if (news.length === 0) return userMessage;
+    const brief = session.vendorThreadId ? "" : `${this.sessionBrief(session)}\n\n`;
+    if (news.length === 0) return `${brief}${userMessage}`;
 
     const lines = news.map((c) => {
       const t = new Date(c.ts).toISOString().slice(5, 16).replace("T", " ");
@@ -64,8 +81,8 @@ export class CodexWorker {
       return `- ${t} ${c.vendor}/${c.kind}${files}: ${c.summary.slice(0, 140)}`;
     });
     return (
-      `<workspace-activity note="recent activity by other agents/sessions in this workspace; ` +
-      `query the harness-substrate MCP tools for more">\n${lines.join("\n")}\n</workspace-activity>\n\n${userMessage}`
+      `${brief}<workspace-activity note="recent activity by other agents/sessions in this workspace">\n` +
+      `${lines.join("\n")}\n</workspace-activity>\n\n${userMessage}`
     );
   }
 

@@ -23,6 +23,7 @@ export class Orchestrator {
       workingDirectory: this.harnessRoot,
       sandboxMode: "workspace-write" as const,
       networkAccessEnabled: true, // clones need the network
+      skipGitRepoCheck: true, // the workspace root is an umbrella dir, not a git repo
       // user's call: correctness of intent-parsing over chat latency ("xhigh" if it misroutes)
       modelReasoningEffort: "high" as const,
     };
