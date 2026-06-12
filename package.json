@@ -14,12 +14,15 @@
     "build": "tsc",
     "dev": "tsx src/cli.ts",
     "mcp": "tsx src/mcp/server.ts",
+    "bot": "tsx src/telegram/main.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "@openai/codex-sdk": "^0.139.0",
     "better-sqlite3": "^11.10.0",
+    "grammy": "^1.43.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
