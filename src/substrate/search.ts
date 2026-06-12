@@ -189,7 +189,12 @@ export function delta(
   const row = db.prepare("SELECT last_capsule_id AS id FROM watermarks WHERE consumer_id = ?").get(consumerId) as
     | { id: number }
     | undefined;
-  const after = row?.id ?? 0;
+  let after = row?.id;
+  if (after === undefined) {
+    // a brand-new consumer cares about recent activity, not the beginning of history
+    const max = (db.prepare("SELECT MAX(id) AS m FROM capsules").get() as { m: number | null }).m ?? 0;
+    after = Math.max(0, max - (opts.limit ?? 200));
+  }
   const rows = db
     .prepare("SELECT * FROM capsules WHERE id > ? ORDER BY id ASC LIMIT ?")
     .all(after, opts.limit ?? 200) as CapsuleRow[];

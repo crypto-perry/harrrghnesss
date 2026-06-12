@@ -91,10 +91,14 @@ export function createBot(opts: {
     const { chatId, topicId } = surface(ctx);
     const session = registry.boundSession(chatId, topicId);
 
-    // telegram's typing indicator dies after ~5s; keep it alive for the whole turn
-    const sendTyping = () => ctx.replyWithChatAction("typing").catch(() => {});
+    // telegram's typing indicator dies after ~5s AND is per-topic in forum groups —
+    // target the topic explicitly and resend faster than the decay
+    const sendTyping = () =>
+      ctx
+        .replyWithChatAction("typing", { message_thread_id: ctx.message?.message_thread_id })
+        .catch(() => {});
     void sendTyping();
-    const typing = setInterval(sendTyping, 5000);
+    const typing = setInterval(sendTyping, 4000);
     const doneTyping = () => clearInterval(typing);
 
     // ── unbound surface → orchestrator ─────────────────────────────────────────
