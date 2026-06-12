@@ -28,20 +28,25 @@ export function cloneProject(url: string, projectsRoot: string, name?: string): 
 }
 
 /**
- * One worktree per agent session, as a sibling under projects/ so the collision
- * scanner sees it: projects/<project>--<sessionId>, on branch harness/<sessionId>.
+ * One full clone per agent session: projects/<project>--<sessionId>, a normal
+ * standalone repo on branch harness/<sessionId>, origin pointing at the project's
+ * GitHub. Clones from the local project copy (fast, no network), then repoints
+ * origin so folder = repo = the project's one GitHub remote — no worktree magic.
  */
-export function createSessionWorktree(
+export function createSessionClone(
   projectPath: string,
   projectsRoot: string,
   projectName: string,
   sessionId: string,
   baseBranch: string,
+  repoUrl: string | null,
 ): { worktreePath: string; branch: string } {
   const branch = `harness/${sessionId}`;
-  const worktreePath = join(projectsRoot, `${projectName}--${sessionId}`);
-  git(["worktree", "add", "-b", branch, worktreePath, baseBranch], projectPath);
-  return { worktreePath, branch };
+  const clonePath = join(projectsRoot, `${projectName}--${sessionId}`);
+  git(["clone", "--branch", baseBranch, projectPath, clonePath]);
+  if (repoUrl) git(["remote", "set-url", "origin", repoUrl], clonePath);
+  git(["checkout", "-b", branch], clonePath);
+  return { worktreePath: clonePath, branch };
 }
 
 export function worktreeStatus(worktreePath: string): { branch: string; dirty: string[]; ahead: number } {

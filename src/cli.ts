@@ -6,7 +6,7 @@ import { search, peek, read, recent, fileHistory, delta } from "./substrate/sear
 import { findCollisions } from "./substrate/collisions.js";
 import { Registry } from "./core/registry.js";
 import { DB_PATH, PROJECTS_ROOT, loadEnv } from "./core/paths.js";
-import { cloneProject, createSessionWorktree } from "./git/repos.js";
+import { cloneProject, createSessionClone } from "./git/repos.js";
 
 loadEnv();
 
@@ -116,7 +116,14 @@ async function main(): Promise<void> {
         branch: "pending",
         vendor: "codex",
       });
-      const wt = createSessionWorktree(project.path, PROJECTS_ROOT, project.name, session.id, project.defaultBranch);
+      const wt = createSessionClone(
+        project.path,
+        PROJECTS_ROOT,
+        project.name,
+        session.id,
+        project.defaultBranch,
+        project.repoUrl,
+      );
       registry.setWorktree(session.id, wt.worktreePath, wt.branch);
 
       let topicId = topicFlag;
